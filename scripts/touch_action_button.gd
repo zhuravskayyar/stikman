@@ -16,6 +16,7 @@ var _direction_pointer_id := -1
 var _direction_press_position := Vector2.ZERO
 var _direction_offset := Vector2.ZERO
 var _direction_vector := Vector2.ZERO
+var _direction_dragged := false
 
 func configure(action: String, icon: Texture2D, frame: Rect2, button_mark := "", held := false, directional := false) -> void:
 	action_name = action
@@ -59,6 +60,7 @@ func handle_touch_pressed(pointer_id: int, local_position: Vector2, _screen_posi
 		_direction_press_position = local_position
 		_direction_offset = Vector2.ZERO
 		_direction_vector = Vector2.ZERO
+		_direction_dragged = false
 		_pointer_ids[pointer_id] = true
 		InputManager.claim_touch_device()
 		queue_redraw()
@@ -81,13 +83,19 @@ func handle_touch_moved(pointer_id: int, local_position: Vector2, _screen_positi
 	var amount := minf(offset.length() / radius, 1.0)
 	_direction_offset = offset.limit_length(radius)
 	_direction_vector = offset.normalized() if amount > 0.18 else Vector2.ZERO
+	if _direction_vector.length_squared() > 0.0:
+		_direction_dragged = true
+		InputManager.set_touch_aim_vector(pointer_id, _direction_vector)
+		InputManager.press_action("primary_action", "touch:%d:aim-fire" % pointer_id)
+	else:
+		InputManager.clear_touch_aim_vector(pointer_id)
 	queue_redraw()
 
 func _on_pointer_released(pointer_id: int) -> void:
 	if not directional_action or pointer_id != _direction_pointer_id:
 		return
-	InputManager.set_touch_punch_direction(_direction_vector)
-	InputManager.pulse_action(action_name, "touch:%d:%s" % [pointer_id, action_name])
+	if not _direction_dragged:
+		InputManager.pulse_action(action_name, "touch:%d:%s" % [pointer_id, action_name])
 
 func _draw() -> void:
 	var radius := minf(size.x, size.y) * 0.5
@@ -138,6 +146,8 @@ func _on_pointer_ended(pointer_id: int) -> void:
 		_direction_press_position = Vector2.ZERO
 		_direction_offset = Vector2.ZERO
 		_direction_vector = Vector2.ZERO
+		_direction_dragged = false
+		InputManager.clear_touch_aim_vector(pointer_id)
 		queue_redraw()
 
 func _direction_radius() -> float:

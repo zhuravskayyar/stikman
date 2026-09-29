@@ -70,7 +70,7 @@ func _layout() -> void:
 	var right_pad := maxf(14.0 * units_per_css_pixel, safe.z + 10.0 * units_per_css_pixel)
 	var top_pad := maxf(12.0 * units_per_css_pixel, safe.y + 8.0 * units_per_css_pixel)
 	var bottom_pad := maxf(14.0 * units_per_css_pixel, safe.w + 10.0 * units_per_css_pixel)
-	var main_side := side * 1.32
+	var main_side := side * 1.32 * 2.5
 	var main_center := Vector2(viewport_size.x - right_pad - main_side * 0.5, viewport_size.y - bottom_pad - main_side * 0.5)
 	var jet_center := main_center - Vector2(main_side * 0.5 + gap + side * 0.5, 0.0)
 	var grenade_center := jet_center - Vector2(side + gap, 0.0)
