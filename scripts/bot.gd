@@ -19,6 +19,9 @@ var preferred_avoid_side := 1.0
 var aggro_radius := 360.0
 var aggroed := false
 var body: AnimatedSprite2D
+var is_network_replica := false
+var network_bot_id := 0
+var network_target_position := Vector2.ZERO
 
 func _ready() -> void:
 	home_position = global_position
@@ -31,6 +34,11 @@ func _ready() -> void:
 	var collision := CollisionShape2D.new()
 	collision.shape = shape
 	add_child(collision)
+	if is_network_replica:
+		collision_layer = 0
+		collision_mask = 0
+		arrival_timer = 0.0
+		network_target_position = global_position
 	body = AnimatedSprite2D.new()
 	body.sprite_frames = Art.robot_frames()
 	body.scale = Vector2(0.10, 0.10)
@@ -38,6 +46,13 @@ func _ready() -> void:
 	add_child(body)
 
 func _physics_process(delta: float) -> void:
+	if is_network_replica:
+		var follow_weight := minf(1.0, delta * 14.0)
+		if global_position.distance_to(network_target_position) > 160.0:
+			global_position = network_target_position
+		else:
+			global_position = global_position.lerp(network_target_position, follow_weight)
+		return
 	if dead_timer > 0.0:
 		dead_timer -= delta
 		position.y += 130.0 * delta
@@ -151,6 +166,28 @@ func _can_see_target() -> bool:
 	query.exclude = [get_rid()]
 	var hit := get_world_2d().direct_space_state.intersect_ray(query)
 	return not hit.is_empty() and hit["collider"] == target
+
+func apply_network_state(state: Dictionary) -> void:
+	if not is_network_replica:
+		return
+	network_target_position = state.get("position", global_position)
+	velocity = state.get("velocity", Vector2.ZERO)
+	weapon_index = int(state.get("weapon_index", weapon_index))
+	health = int(state.get("health", health))
+	dead_timer = float(state.get("dead_timer", dead_timer))
+	if is_instance_valid(body):
+		body.flip_h = bool(state.get("flip_h", body.flip_h))
+		var animation_name := StringName(str(state.get("animation", "hover")))
+		if body.sprite_frames.has_animation(animation_name) and body.animation != animation_name:
+			body.play(animation_name)
+
+func show_network_defeat() -> void:
+	if not is_network_replica:
+		return
+	dead_timer = 0.95
+	velocity = Vector2.ZERO
+	if is_instance_valid(body):
+		body.play("death")
 
 func take_hit(_world_point: Vector2, amount: int) -> void:
 	if dead_timer > 0.0:
