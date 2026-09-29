@@ -62,6 +62,7 @@ func handle_touch_pressed(pointer_id: int, local_position: Vector2, _screen_posi
 		_direction_offset = Vector2.ZERO
 		_direction_vector = Vector2.ZERO
 		_direction_dragged = false
+		_fire_active = false
 		_pointer_ids[pointer_id] = true
 		InputManager.claim_touch_device()
 		queue_redraw()
@@ -85,7 +86,7 @@ func handle_touch_moved(pointer_id: int, local_position: Vector2, _screen_positi
 
 	var viewport_size := get_viewport_rect().size
 	var units_per_css_pixel := InputManager.get_viewport_units_per_css_pixel(viewport_size)
-	var activation_distance := maxf(12.0 * units_per_css_pixel, radius * 0.22)
+	var activation_distance := maxf(14.0 * units_per_css_pixel, radius * 0.20)
 	var release_distance := activation_distance * 0.72
 	var drag_distance := offset.length()
 
@@ -167,4 +168,4 @@ func _on_pointer_ended(pointer_id: int) -> void:
 		queue_redraw()
 
 func _direction_radius() -> float:
-	return maxf(1.0, minf(size.x, size.y) * 0.24)
+	return maxf(1.0, minf(size.x, size.y) * 0.32)
