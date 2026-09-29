@@ -2,6 +2,7 @@ extends Node
 
 signal active_input_device_changed(device: String)
 signal touch_pointer_moved(pointer_id: int, screen_position: Vector2)
+signal touch_pointer_released(pointer_id: int)
 signal touch_pointer_ended(pointer_id: int)
 signal zoom_requested(factor: float)
 signal gamepad_connection_changed(connected: bool)
@@ -24,6 +25,7 @@ var _manual_press_frames: Dictionary = {}
 var _manual_release_frames: Dictionary = {}
 var _touch_move_vectors: Dictionary = {}
 var _touch_aim_vectors: Dictionary = {}
+var _touch_punch_direction := Vector2.ZERO
 var _active_touches: Dictionary = {}
 var _touch_owners: Dictionary = {}
 var _touch_targets: Array[Control] = []
@@ -65,6 +67,8 @@ func _input(event: InputEvent) -> void:
 					get_viewport().set_input_as_handled()
 		else:
 			var was_captured := _touch_owners.has(event.index)
+			if was_captured:
+				touch_pointer_released.emit(event.index)
 			_end_touch(event.index)
 			if was_captured:
 				get_viewport().set_input_as_handled()
@@ -240,6 +244,14 @@ func set_touch_aim_vector(pointer_id: int, value: Vector2) -> void:
 
 func clear_touch_aim_vector(pointer_id: int) -> void:
 	_touch_aim_vectors.erase(pointer_id)
+
+func set_touch_punch_direction(value: Vector2) -> void:
+	_touch_punch_direction = value.normalized() if value.is_finite() and value.length_squared() > 0.001 else Vector2.ZERO
+
+func consume_touch_punch_direction() -> Vector2:
+	var direction := _touch_punch_direction
+	_touch_punch_direction = Vector2.ZERO
+	return direction
 
 func get_active_touch_count() -> int:
 	return _active_touches.size()
@@ -432,6 +444,7 @@ func reset_all_inputs() -> void:
 	_manual_sources.clear()
 	_touch_move_vectors.clear()
 	_touch_aim_vectors.clear()
+	_touch_punch_direction = Vector2.ZERO
 	for pointer_id in _active_touches.keys():
 		touch_pointer_ended.emit(int(pointer_id))
 	_active_touches.clear()

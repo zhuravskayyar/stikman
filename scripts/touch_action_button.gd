@@ -8,16 +8,22 @@ var icon_texture: Texture2D
 var paper_region := GRENADE_REGION
 var mark := ""
 var hold_action := false
+var directional_action := false
 var counter_text := ""
 var action_enabled := true
 var _pointer_ids: Dictionary = {}
+var _direction_pointer_id := -1
+var _direction_press_position := Vector2.ZERO
+var _direction_offset := Vector2.ZERO
+var _direction_vector := Vector2.ZERO
 
-func configure(action: String, icon: Texture2D, frame: Rect2, button_mark := "", held := false) -> void:
+func configure(action: String, icon: Texture2D, frame: Rect2, button_mark := "", held := false, directional := false) -> void:
 	action_name = action
 	icon_texture = icon
 	paper_region = frame
 	mark = button_mark
 	hold_action = held
+	directional_action = directional
 	queue_redraw()
 
 func set_counter(value: String) -> void:
@@ -37,6 +43,7 @@ func _ready() -> void:
 	focus_mode = Control.FOCUS_NONE
 	custom_minimum_size = Vector2(48.0, 48.0)
 	InputManager.register_touch_target(self)
+	InputManager.touch_pointer_released.connect(_on_pointer_released)
 	InputManager.touch_pointer_ended.connect(_on_pointer_ended)
 
 func _exit_tree() -> void:
@@ -45,6 +52,17 @@ func _exit_tree() -> void:
 func handle_touch_pressed(pointer_id: int, local_position: Vector2, _screen_position: Vector2) -> bool:
 	if not action_enabled or not Rect2(Vector2.ZERO, size).has_point(local_position):
 		return false
+	if directional_action:
+		if _direction_pointer_id >= 0:
+			return false
+		_direction_pointer_id = pointer_id
+		_direction_press_position = local_position
+		_direction_offset = Vector2.ZERO
+		_direction_vector = Vector2.ZERO
+		_pointer_ids[pointer_id] = true
+		InputManager.claim_touch_device()
+		queue_redraw()
+		return true
 	_pointer_ids[pointer_id] = true
 	var source_id := "touch:%d:%s" % [pointer_id, action_name]
 	if hold_action:
@@ -55,8 +73,21 @@ func handle_touch_pressed(pointer_id: int, local_position: Vector2, _screen_posi
 	queue_redraw()
 	return true
 
-func handle_touch_moved(_pointer_id: int, _local_position: Vector2, _screen_position: Vector2) -> void:
-	pass
+func handle_touch_moved(pointer_id: int, local_position: Vector2, _screen_position: Vector2) -> void:
+	if not directional_action or pointer_id != _direction_pointer_id:
+		return
+	var offset := local_position - _direction_press_position
+	var radius := _direction_radius()
+	var amount := minf(offset.length() / radius, 1.0)
+	_direction_offset = offset.limit_length(radius)
+	_direction_vector = offset.normalized() if amount > 0.18 else Vector2.ZERO
+	queue_redraw()
+
+func _on_pointer_released(pointer_id: int) -> void:
+	if not directional_action or pointer_id != _direction_pointer_id:
+		return
+	InputManager.set_touch_punch_direction(_direction_vector)
+	InputManager.pulse_action(action_name, "touch:%d:%s" % [pointer_id, action_name])
 
 func _draw() -> void:
 	var radius := minf(size.x, size.y) * 0.5
@@ -67,9 +98,18 @@ func _draw() -> void:
 		paper.a = 0.62
 	draw_circle(center, radius * 0.78, paper)
 	draw_texture_rect_region(PAPER_ATLAS, Rect2(Vector2.ZERO, size), paper_region)
+	var icon_center := center
+	if directional_action and _direction_pointer_id >= 0:
+		var knob_center := center + _direction_offset
+		if _direction_offset.length_squared() > 1.0:
+			draw_line(center, knob_center, Color("292331b8"), maxf(2.0, radius * 0.07), true)
+			draw_circle(knob_center + Vector2(1.0, 2.0), radius * 0.5, Color("29233135"))
+			draw_circle(knob_center, radius * 0.5, Color("e2d2b4f0"))
+			draw_arc(knob_center, radius * 0.5, 0.0, TAU, 36, Color("292331d8"), maxf(1.0, radius * 0.035), true)
+		icon_center = knob_center
 	if icon_texture != null:
 		var icon_side := radius * 1.04
-		var icon_rect := Rect2(center - Vector2.ONE * icon_side * 0.5, Vector2.ONE * icon_side)
+		var icon_rect := Rect2(icon_center - Vector2.ONE * icon_side * 0.5, Vector2.ONE * icon_side)
 		draw_texture_rect(icon_texture, icon_rect, false, Color("292331" if action_enabled else "756b60"))
 	elif mark == "pause":
 		var bar_width := maxf(3.0, radius * 0.13)
@@ -93,3 +133,12 @@ func _draw() -> void:
 func _on_pointer_ended(pointer_id: int) -> void:
 	if _pointer_ids.erase(pointer_id):
 		queue_redraw()
+	if pointer_id == _direction_pointer_id:
+		_direction_pointer_id = -1
+		_direction_press_position = Vector2.ZERO
+		_direction_offset = Vector2.ZERO
+		_direction_vector = Vector2.ZERO
+		queue_redraw()
+
+func _direction_radius() -> float:
+	return maxf(1.0, minf(size.x, size.y) * 0.24)

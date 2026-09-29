@@ -24,7 +24,7 @@ func _ready() -> void:
 	add_child(aim_area)
 	_add_button("grenade", "skill_4", GRENADE_ICON, GRENADE_REGION)
 	_add_button("jetpack", "jump", JET_ICON, JET_REGION, "", true)
-	_add_button("punch", "skill_1", PUNCH_ICON, PUNCH_REGION)
+	_add_button("punch", "skill_1", PUNCH_ICON, PUNCH_REGION, "", false, true)
 	_add_button("interact", "interact", null, GRENADE_REGION, "interact")
 	_add_button("pause", "pause", null, PUNCH_REGION, "pause")
 	action_buttons["interact"].visible = false
@@ -33,9 +33,9 @@ func _ready() -> void:
 	_layout()
 	_update_visibility()
 
-func _add_button(key: String, action: String, icon: Texture2D, paper_region: Rect2, mark := "", held := false) -> void:
+func _add_button(key: String, action: String, icon: Texture2D, paper_region: Rect2, mark := "", held := false, directional := false) -> void:
 	var button := TouchButton.new()
-	button.configure(action, icon, paper_region, mark, held)
+	button.configure(action, icon, paper_region, mark, held, directional)
 	add_child(button)
 	action_buttons[key] = button
 

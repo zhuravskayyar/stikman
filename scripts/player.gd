@@ -61,6 +61,7 @@ var flight_phase := 0.0
 var pack_frame := -1
 var punch_cooldown := 0.0
 var punch_flash := 0.0
+var punch_direction := Vector2.RIGHT
 var world_size := LevelDesign.WORLD_SIZE
 var target_zoom := LevelDesign.DEFAULT_ZOOM
 var trajectory_start := Vector2.ZERO
@@ -319,12 +320,20 @@ func _update_pack(delta: float) -> void:
 	pack.rotation = (sin(flight_phase * 10.0) * 0.04 if thrusting else 0.0)
 
 func punch() -> void:
+	var touch_direction := InputManager.consume_touch_punch_direction()
 	if dead_timer > 0.0 or punch_cooldown > 0.0:
 		return
+	if touch_direction.length_squared() > 0.001:
+		punch_direction = touch_direction.normalized()
+		aiming = punch_direction
+		if absf(punch_direction.x) > 0.01:
+			facing_left = punch_direction.x < 0.0
+	else:
+		punch_direction = Vector2.LEFT if facing_left else Vector2.RIGHT
 	punch_cooldown = 0.42
 	punch_flash = 0.16
 	Sfx.play_at(&"punch", global_position, -14.0, 0.94, 0.1)
-	punched.emit(global_position + Vector2(0, -10) * ART_SCALE, Vector2.LEFT if facing_left else Vector2.RIGHT)
+	punched.emit(global_position + Vector2(0, -10) * ART_SCALE, punch_direction)
 
 func throw_grenade() -> void:
 	if dead_timer > 0.0 or grenades <= 0:
@@ -503,5 +512,6 @@ func _draw() -> void:
 			var drift := fposmod(flight_phase * 70.0 + i * 13.0, 37.0) * ART_SCALE
 			draw_circle(Vector2(x + sin(t + i * 2.1) * 8.0 * ART_SCALE, 21.0 * ART_SCALE + drift), 1.6 * ART_SCALE, Color("d47c60", 1.0 - drift / (43.0 * ART_SCALE)))
 	if punch_flash > 0.0:
-		var side := -1.0 if facing_left else 1.0
-		draw_arc(Vector2(side * 34.0, -8) * ART_SCALE, 20.0 * ART_SCALE, -0.9, 0.9, 12, Color("272231"), 2.5 * ART_SCALE, true)
+		var swing_center := Vector2(0.0, -8.0) * ART_SCALE + punch_direction * 34.0 * ART_SCALE
+		var swing_angle := punch_direction.angle()
+		draw_arc(swing_center, 20.0 * ART_SCALE, swing_angle - 0.9, swing_angle + 0.9, 12, Color("272231"), 2.5 * ART_SCALE, true)
