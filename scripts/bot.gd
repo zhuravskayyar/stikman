@@ -188,10 +188,6 @@ func show_network_defeat() -> void:
 	velocity = Vector2.ZERO
 	if is_instance_valid(body):
 		body.play("death")
-	get_tree().create_timer(0.95).timeout.connect(func() -> void:
-		if is_instance_valid(self):
-			queue_free()
-	)
 
 func take_hit(_world_point: Vector2, amount: int) -> void:
 	if dead_timer > 0.0:
