@@ -39,12 +39,13 @@ func _on_pointer_moved(pointer_id: int, screen_position: Vector2) -> void:
 		return
 	var local_position := get_global_transform_with_canvas().affine_inverse() * screen_position
 	var radius := minf(size.x, size.y) * 0.38
-	var offset := local_position - _origin
-	var amount := minf(offset.length() / maxf(radius, 1.0), 1.0)
-	_knob_offset = offset.limit_length(radius)
+	var x_offset := clampf(local_position.x - _origin.x, -radius, radius)
+	var amount := minf(absf(x_offset) / maxf(radius, 1.0), 1.0)
+	_knob_offset = Vector2(x_offset, 0.0)
 	var output := Vector2.ZERO
 	if amount > DEADZONE:
-		output = offset.normalized() * ((amount - DEADZONE) / (1.0 - DEADZONE))
+		var strength := (amount - DEADZONE) / (1.0 - DEADZONE)
+		output = Vector2(signf(x_offset) * strength, 0.0)
 	InputManager.set_touch_move_vector(pointer_id, output)
 	queue_redraw()
 
