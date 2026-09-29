@@ -10,6 +10,8 @@ const PUNCH_ICON: Texture2D = preload("res://assets/hud_icon_punch.png")
 const GRENADE_REGION := Rect2(580, 467, 385, 359)
 const JET_REGION := Rect2(994, 462, 406, 376)
 const PUNCH_REGION := Rect2(1396, 468, 360, 366)
+const LEFT_JOYSTICK_SCALE := 1.5
+const RIGHT_JOYSTICK_SCALE := 2.0
 
 var joystick: Control
 var aim_area: Control
@@ -70,7 +72,7 @@ func _layout() -> void:
 	var right_pad := maxf(14.0 * units_per_css_pixel, safe.z + 10.0 * units_per_css_pixel)
 	var top_pad := maxf(12.0 * units_per_css_pixel, safe.y + 8.0 * units_per_css_pixel)
 	var bottom_pad := maxf(14.0 * units_per_css_pixel, safe.w + 10.0 * units_per_css_pixel)
-	var main_side := side * 1.32 * 2.5
+	var main_side := side * 1.32 * RIGHT_JOYSTICK_SCALE
 	var main_center := Vector2(viewport_size.x - right_pad - main_side * 0.5, viewport_size.y - bottom_pad - main_side * 0.5)
 	var jet_center := main_center - Vector2(main_side * 0.5 + gap + side * 0.5, 0.0)
 	var grenade_center := jet_center - Vector2(side + gap, 0.0)
@@ -80,7 +82,7 @@ func _layout() -> void:
 	_place("interact", grenade_center - Vector2(0.0, side + gap), side)
 	var pause_side := maxf(48.0 * units_per_css_pixel, side * 0.82)
 	_place("pause", Vector2(left_pad + 224.0 * units_per_css_pixel, top_pad + pause_side * 0.5), pause_side)
-	var joystick_side := clampf(minf(css_size.y * 0.32, css_size.x * 0.24), 108.0, 164.0) * units_per_css_pixel
+	var joystick_side := clampf(minf(css_size.y * 0.32, css_size.x * 0.24), 108.0, 164.0) * LEFT_JOYSTICK_SCALE * units_per_css_pixel
 	joystick.size = Vector2.ONE * joystick_side
 	joystick.position = Vector2(left_pad, viewport_size.y - bottom_pad - joystick_side)
 	var aim_left := viewport_size.x * 0.37

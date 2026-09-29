@@ -241,6 +241,11 @@ func _physics_process(delta: float) -> void:
 		fuel = minf(100.0, fuel + 24.0 * delta)
 	previous_space = space
 	move_and_slide()
+	var top_limit := LevelDesign.PLAYER_HEIGHT * 0.5
+	if global_position.y < top_limit:
+		global_position.y = top_limit
+		if velocity.y < 0.0:
+			velocity.y = 0.0
 	if global_position.y > world_size.y + 60.0:
 		_die()
 		return
