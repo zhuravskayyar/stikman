@@ -14,6 +14,8 @@ var home_subtitle: Control
 var home_cards: Array[Button] = []
 var settings_button: Button
 var exit_button: Button
+var update_status_button: Button
+var update_status_label: GlyphText
 var player_tag: Control
 var settings_panel: Control
 var settings_name: LineEdit
@@ -23,6 +25,9 @@ var settings_fullscreen_label: GlyphText
 var settings_volume_label: GlyphText
 var notice_panel: Control
 var orientation_hint: CanvasLayer
+var wlan_panel: Control
+var wlan_address: LineEdit
+var wlan_message: GlyphText
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -46,7 +51,11 @@ func _ready() -> void:
 	orientation_hint = OrientationHint.new()
 	add_child(orientation_hint)
 	get_viewport().size_changed.connect(_layout_screen)
+	Wlan.connection_established.connect(_on_wlan_connected)
+	Wlan.connection_failed.connect(_on_wlan_failed)
+	UpdateManager.status_changed.connect(_on_update_status_changed)
 	_show_home()
+	UpdateManager.check_for_updates()
 	call_deferred("_layout_screen")
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -70,6 +79,15 @@ func _show_home() -> void:
 	screen_layer.add_child(settings_button)
 	exit_button = _make_button("ВИЙТИ", Color("29231d"), Color("f3e8cf"), Callable(self, "_exit_game"))
 	screen_layer.add_child(exit_button)
+	update_status_button = _make_button("", Color("f3e8cf"), Color.BLACK, Callable(self, "_on_update_status_pressed"))
+	update_status_label = _make_label(UpdateManager.status_message, 13.0, Color.BLACK, GlyphText.Align.LEFT)
+	update_status_label.vertical_alignment = GlyphText.VerticalAlign.CENTER
+	update_status_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	update_status_label.offset_left = 9.0
+	update_status_label.offset_right = -9.0
+	update_status_button.add_child(update_status_label)
+	update_status_button.disabled = not UpdateManager.can_retry and not UpdateManager.can_install
+	screen_layer.add_child(update_status_button)
 	player_tag = _make_label("ГРАВЕЦЬ: " + Profile.player_name, 18.0, Color("2b241e"), GlyphText.Align.CENTER)
 	screen_layer.add_child(player_tag)
 	_layout_screen()
@@ -147,7 +165,53 @@ func _show_settings() -> void:
 	settings_name.caret_column = settings_name.text.length()
 
 func _show_wlan_notice() -> void:
-	_show_mode_notice("CO-OP WLAN")
+	_clear_screen()
+	current_screen = "wlan"
+	wlan_panel = _make_panel(Vector2(560.0, 375.0))
+	screen_layer.add_child(wlan_panel)
+	var heading := _make_label("CO-OP WLAN", 36.0, Color("a83a2d"), GlyphText.Align.CENTER)
+	heading.position = Vector2(22.0, 20.0)
+	heading.size = Vector2(516.0, 52.0)
+	wlan_panel.add_child(heading)
+	var instructions := _make_label("ОБИДВА ПРИСТРОЇ МАЮТЬ БУТИ В ОДНІЙ WI-FI МЕРЕЖІ", 16.0, Color("29231d"), GlyphText.Align.CENTER)
+	instructions.position = Vector2(28.0, 79.0)
+	instructions.size = Vector2(504.0, 54.0)
+	wlan_panel.add_child(instructions)
+	if OS.has_feature("web"):
+		var browser_note := _make_label("У БРАУЗЕРІ МОЖНА ПІДКЛЮЧИТИСЯ ДО ХОСТА ЗА IP", 14.0, Color("a83a2d"), GlyphText.Align.CENTER)
+		browser_note.position = Vector2(26.0, 125.0)
+		browser_note.size = Vector2(508.0, 30.0)
+		wlan_panel.add_child(browser_note)
+	var address_label := _make_label("IP ХОСТА", 16.0, Color("29231d"), GlyphText.Align.LEFT)
+	address_label.position = Vector2(30.0, 166.0)
+	address_label.size = Vector2(170.0, 27.0)
+	wlan_panel.add_child(address_label)
+	wlan_address = LineEdit.new()
+	wlan_address.text = _default_wlan_address()
+	wlan_address.placeholder_text = "192.168.1.20:8910"
+	wlan_address.position = Vector2(28.0, 195.0)
+	wlan_address.size = Vector2(504.0, 48.0)
+	wlan_address.add_theme_font_size_override("font_size", 20)
+	wlan_address.add_theme_color_override("font_color", Color("29231d"))
+	wlan_address.add_theme_stylebox_override("normal", _line_style(Color("f5ecd9")))
+	wlan_address.add_theme_stylebox_override("focus", _line_style(Color("fff8e9")))
+	wlan_panel.add_child(wlan_address)
+	var host := _make_button("СТВОРИТИ ХОСТ", Color("a83a2d"), Color("f3e8cf"), Callable(self, "_start_wlan_host"))
+	host.position = Vector2(28.0, 264.0)
+	host.size = Vector2(240.0, 50.0)
+	host.disabled = OS.has_feature("web")
+	wlan_panel.add_child(host)
+	var join := _make_button("ПІДКЛЮЧИТИСЯ", Color("29231d"), Color("f3e8cf"), Callable(self, "_join_wlan"))
+	join.position = Vector2(292.0, 264.0)
+	join.size = Vector2(240.0, 50.0)
+	wlan_panel.add_child(join)
+	wlan_message = _make_label("ХОСТ ЗАПУСКАЮТЬ У ЗАСТОСУНКУ; БРАУЗЕР ПІДКЛЮЧАЄТЬСЯ", 13.0, Color("57483a"), GlyphText.Align.CENTER)
+	wlan_message.position = Vector2(28.0, 321.0)
+	wlan_message.size = Vector2(504.0, 26.0)
+	wlan_panel.add_child(wlan_message)
+	_layout_screen()
+	wlan_address.grab_focus()
+	wlan_address.caret_column = wlan_address.text.length()
 
 func _show_online_notice() -> void:
 	_show_mode_notice("ONLINE")
@@ -289,6 +353,8 @@ func _layout_screen() -> void:
 			button_y += heights[index] + 14.0
 		settings_button.position = Vector2(viewport_size.x - 178.0, 24.0)
 		settings_button.size = Vector2(150.0, 42.0)
+		update_status_button.position = Vector2(24.0, 24.0)
+		update_status_button.size = Vector2(minf(400.0, viewport_size.x * 0.44), 42.0)
 		exit_button.position = Vector2(24.0, viewport_size.y - 66.0)
 		exit_button.size = Vector2(150.0, 42.0)
 		player_tag.position = Vector2(left, viewport_size.y - 53.0)
@@ -297,6 +363,8 @@ func _layout_screen() -> void:
 		settings_panel.position = (viewport_size - settings_panel.size) * 0.5
 	elif current_screen == "notice" and is_instance_valid(notice_panel):
 		notice_panel.position = (viewport_size - notice_panel.size) * 0.5
+	elif current_screen == "wlan" and is_instance_valid(wlan_panel):
+		wlan_panel.position = (viewport_size - wlan_panel.size) * 0.5
 
 func _clear_screen() -> void:
 	if is_instance_valid(screen_layer):
@@ -308,6 +376,8 @@ func _clear_screen() -> void:
 	home_cards.clear()
 	settings_button = null
 	exit_button = null
+	update_status_button = null
+	update_status_label = null
 	player_tag = null
 	settings_panel = null
 	settings_name = null
@@ -316,6 +386,9 @@ func _clear_screen() -> void:
 	settings_fullscreen_label = null
 	settings_volume_label = null
 	notice_panel = null
+	wlan_panel = null
+	wlan_address = null
+	wlan_message = null
 
 func _on_volume_preview(value: float) -> void:
 	AudioServer.set_bus_volume_linear(0, value)
@@ -338,6 +411,55 @@ func _save_settings() -> void:
 func _start_local_arena() -> void:
 	Profile.save_settings()
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func _start_wlan_host() -> void:
+	Wlan.local_player_name = Profile.player_name
+	Profile.save_settings()
+	var result: Error = Wlan.start_host()
+	if result != OK:
+		_set_wlan_message(Wlan.status_message)
+		return
+	get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func _join_wlan() -> void:
+	Wlan.local_player_name = Profile.player_name
+	var result: Error = Wlan.connect_to(wlan_address.text)
+	if result != OK:
+		_set_wlan_message(Wlan.status_message)
+		return
+	_set_wlan_message("ПІДКЛЮЧЕННЯ…")
+
+func _default_wlan_address() -> String:
+	if OS.has_feature("web"):
+		var page_host := str(JavaScriptBridge.eval("window.location.hostname", true))
+		if not page_host.is_empty() and page_host != "null":
+			return page_host + ":" + str(Wlan.GAME_PORT)
+	return ""
+
+func _on_wlan_connected() -> void:
+	if current_screen == "wlan":
+		Profile.save_settings()
+		get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func _on_wlan_failed(reason: String) -> void:
+	if current_screen == "wlan":
+		_set_wlan_message(reason)
+
+func _set_wlan_message(message: String) -> void:
+	if is_instance_valid(wlan_message):
+		wlan_message.text = message
+
+func _on_update_status_changed(message: String, retry: bool, install: bool) -> void:
+	if not is_instance_valid(update_status_button) or not is_instance_valid(update_status_label):
+		return
+	update_status_label.text = message
+	update_status_button.disabled = not retry and not install
+
+func _on_update_status_pressed() -> void:
+	if UpdateManager.can_install:
+		UpdateManager.open_downloaded_update()
+	elif UpdateManager.can_retry:
+		UpdateManager.check_for_updates()
 
 func _exit_game() -> void:
 	get_tree().quit()

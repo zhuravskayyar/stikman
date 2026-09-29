@@ -1,6 +1,6 @@
 extends StaticBody2D
 
-signal carved(at: Vector2, pixels: int)
+signal carved(at: Vector2, pixels: int, radius: float)
 
 const VISUAL_TEXTURE: Texture2D = preload("res://assets/arena_visual.png")
 const MASK_TEXTURE: Texture2D = preload("res://assets/arena_mask.png")
@@ -71,7 +71,7 @@ func excavate(world_point: Vector2, radius: float) -> void:
 	var first_row := maxi(0, floori((center.y - radius) / CELL_SIZE))
 	var last_row := mini(grid_rows - 1, floori((center.y + radius) / CELL_SIZE))
 	_rebuild_rows(first_row, last_row)
-	carved.emit(to_global(center), removed)
+	carved.emit(to_global(center), removed, radius)
 
 func _rebuild_rows(first_row: int, last_row: int) -> void:
 	for row in range(first_row, last_row + 1):

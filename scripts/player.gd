@@ -76,6 +76,9 @@ var arms: Sprite2D
 var pack: Sprite2D
 var player_name := "PLAYER"
 var name_plate: GlyphText
+var network_peer_id := 1
+var is_network_replica := false
+var network_target_position := Vector2.ZERO
 
 func _ready() -> void:
 	add_to_group("players")
@@ -139,15 +142,36 @@ func _ready() -> void:
 	target_zoom = maxf(target_zoom, _minimum_camera_zoom())
 	camera.zoom = Vector2.ONE * target_zoom
 	add_child(camera)
-	camera.make_current()
+	camera.enabled = not is_network_replica
+	if not is_network_replica:
+		camera.make_current()
 	var audio_listener := AudioListener2D.new()
 	camera.add_child(audio_listener)
-	audio_listener.make_current()
+	if not is_network_replica:
+		audio_listener.make_current()
 	_emit_stats()
 	zoom_changed.emit(_current_zoom_label())
 	InputManager.zoom_requested.connect(_on_zoom_requested)
 
 func _process(delta: float) -> void:
+	if is_network_replica:
+		global_position = global_position.lerp(network_target_position, minf(1.0, delta * 18.0))
+		invulnerability = maxf(0.0, invulnerability - delta)
+		hurt_timer = maxf(0.0, hurt_timer - delta)
+		if dead_timer > 0.0:
+			dead_timer -= delta
+			if dead_timer <= 0.0:
+				respawn()
+				return
+		weapon_pivot.rotation = aiming.angle()
+		weapon_pivot.scale.y = -1.0 if aiming.x < 0.0 else 1.0
+		body.flip_h = facing_left
+		pack.flip_h = facing_left
+		pack.position.x = 30.0 * ART_SCALE if facing_left else -30.0 * ART_SCALE
+		var remote_animation := AnimationState.DEATH if dead_timer > 0.0 else AnimationState.FLY if thrusting else AnimationState.JUMP if velocity.y < -48.0 else AnimationState.FALL if velocity.y > 48.0 else AnimationState.RUN if absf(velocity.x) > 16.0 else AnimationState.IDLE
+		_set_animation_state(remote_animation)
+		_update_pack(delta)
+		return
 	var safe_zoom := maxf(target_zoom, _minimum_camera_zoom())
 	camera.zoom = camera.zoom.lerp(Vector2.ONE * safe_zoom, minf(1.0, delta * 9.0))
 	_handle_action_presses()
@@ -220,6 +244,8 @@ func _minimum_camera_zoom() -> float:
 	return maxf(viewport_size.x / world_size.x, viewport_size.y / world_size.y)
 
 func _physics_process(delta: float) -> void:
+	if is_network_replica:
+		return
 	if dead_timer > 0.0:
 		dead_timer -= delta
 		if dead_timer <= 0.0:
@@ -502,6 +528,44 @@ func respawn() -> void:
 
 func _emit_stats() -> void:
 	stats_changed.emit(health, fuel, ammo[weapon_index], WEAPONS[weapon_index]["capacity"], WEAPONS[weapon_index]["name"], weapon_index, grenades)
+
+func apply_network_state(state: Dictionary, authoritative_health := true) -> void:
+	var next_position: Vector2 = state.get("position", global_position)
+	if is_network_replica:
+		if network_target_position == Vector2.ZERO:
+			global_position = next_position
+		network_target_position = next_position
+	else:
+		global_position = next_position
+	velocity = state.get("velocity", Vector2.ZERO)
+	aiming = state.get("aiming", aiming).normalized()
+	if aiming.is_zero_approx():
+		aiming = Vector2.RIGHT
+	facing_left = bool(state.get("facing_left", aiming.x < 0.0))
+	thrusting = bool(state.get("thrusting", false))
+	if authoritative_health:
+		health = int(state.get("health", health))
+		dead_timer = float(state.get("dead_timer", dead_timer))
+	fuel = float(state.get("fuel", fuel))
+	grenades = int(state.get("grenades", grenades))
+	var incoming_ammo: Array = state.get("ammo", ammo)
+	if incoming_ammo.size() == ammo.size():
+		ammo = incoming_ammo.duplicate()
+	var incoming_unlocked: Array = state.get("unlocked", unlocked)
+	if incoming_unlocked.size() == unlocked.size():
+		unlocked = incoming_unlocked.duplicate()
+	var incoming_weapon := int(state.get("weapon_index", weapon_index))
+	if incoming_weapon != weapon_index and incoming_weapon >= 0 and incoming_weapon < WEAPONS.size():
+		_select_weapon(incoming_weapon)
+	if dead_timer > 0.0:
+		weapon_pivot.visible = false
+	else:
+		weapon_pivot.visible = true
+	_emit_stats()
+
+func show_network_punch(direction: Vector2) -> void:
+	punch_direction = direction.normalized()
+	punch_flash = 0.16
 
 func _draw() -> void:
 	if dead_timer <= 0.0 and not action_pointer_blocked and trajectory_points.size() > 1 and trajectory_start.distance_to(trajectory_end) > 5.0:

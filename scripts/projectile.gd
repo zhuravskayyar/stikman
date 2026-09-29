@@ -31,6 +31,7 @@ var visual_timer := 0.0
 var visual_frame := 0
 var trap_shape: CircleShape2D
 var sprite: Sprite2D
+var visual_only := false
 
 func _ready() -> void:
 	velocity = direction.normalized() * speed
@@ -60,6 +61,9 @@ func _physics_process(delta: float) -> void:
 	_animate_special(delta)
 	life -= delta
 	if life <= 0.0:
+		if visual_only:
+			queue_free()
+			return
 		if blast_radius > 0.0:
 			_expire_at_range()
 		else:
@@ -93,6 +97,16 @@ func _physics_process(delta: float) -> void:
 		displacement *= remaining / step_length
 		step_length = remaining
 	var next := global_position + displacement
+	if visual_only:
+		global_position = next
+		velocity.y += gravity * delta
+		direction = velocity.normalized()
+		if projectile_kind == "bullet" or projectile_kind == "grenade":
+			sprite.rotation = direction.angle()
+		traveled += step_length
+		if traveled >= max_range:
+			queue_free()
+		return
 	var query := PhysicsRayQueryParameters2D.create(global_position, next)
 	if is_instance_valid(owner_body):
 		query.exclude = [owner_body.get_rid()]

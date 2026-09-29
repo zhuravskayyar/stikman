@@ -95,4 +95,5 @@ func _resume() -> void:
 
 func _return_to_menu() -> void:
 	get_tree().paused = false
+	Wlan.stop_session()
 	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
