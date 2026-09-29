@@ -196,7 +196,7 @@ func _sync_network_bots() -> void:
 		if not network_bots.has(bot_id):
 			_create_network_bot(bot_id)
 
-func _create_network_bot(peer_id: int, forced_spawn := Vector2.INF, forced_weapon := -1) -> void:
+func _create_network_bot(peer_id: int, forced_spawn: Vector2 = Vector2.INF, forced_weapon: int = -1) -> void:
 	if not networked or not Wlan.is_host or network_bots.has(peer_id) or not network_players.has(peer_id):
 		return
 	var peer_ids: Array = network_players.keys()
@@ -618,6 +618,8 @@ func _on_network_states_received(states: Array) -> void:
 			if bot_id <= 0:
 				continue
 			var bot_state: Dictionary = entry.get("bot_state", {})
+			if network_bots.has(bot_id) and not is_instance_valid(network_bots[bot_id]):
+				network_bots.erase(bot_id)
 			if not network_bots.has(bot_id):
 				_spawn_network_bot_replica(bot_id, bot_state)
 			elif is_instance_valid(network_bots[bot_id]):
@@ -687,9 +689,12 @@ func _on_network_action_received(peer_id: int, action: String, payload: Dictiona
 	if action == "bot_defeated":
 		var defeated_bot_id := int(payload.get("bot_id", 0))
 		var defeated_bot: CharacterBody2D = network_bots.get(defeated_bot_id) as CharacterBody2D
-		network_bots.erase(defeated_bot_id)
 		if is_instance_valid(defeated_bot):
 			defeated_bot.show_network_defeat()
+			get_tree().create_timer(1.0).timeout.connect(func() -> void:
+				if network_bots.get(defeated_bot_id) == defeated_bot:
+					network_bots.erase(defeated_bot_id)
+			)
 		_spawn_effect("explosion", payload.get("position", Vector2.ZERO), 0.33, 0.4)
 		return
 	if action == "bot_remove":
