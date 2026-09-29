@@ -482,7 +482,10 @@ func pickup(kind: String) -> void:
 func take_hit(_world_point: Vector2, amount: int, attacker: Node = null) -> void:
 	if dead_timer > 0.0 or invulnerability > 0.0:
 		return
-	health = maxi(0, health - amount)
+	var applied_damage := amount
+	if is_instance_valid(attacker) and attacker != self and attacker.is_in_group("players"):
+		applied_damage *= 2
+	health = maxi(0, health - applied_damage)
 	hurt_timer = 0.34
 	invulnerability = 0.35
 	_set_animation_state(AnimationState.HURT, true)
