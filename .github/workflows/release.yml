@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           source_version="$(sed -n 's/^config\/version="\([0-9.]*\)".*/\1/p' project.godot | head -n 1)"
-          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name' 2>/dev/null || true)"
+          latest_tag="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '[.[] | select(.draft == false and .prerelease == false)] | sort_by(.created_at) | last | .tag_name // ""')"
           if [[ -n "$latest_tag" ]]; then
             version="$(python3 scripts/next_release_version.py "$source_version" "${latest_tag#v}")"
           else
