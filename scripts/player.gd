@@ -255,7 +255,7 @@ func _physics_process(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, movement_input.x * SPEED, ACCELERATION * delta)
 	if not is_on_floor():
 		velocity.y += GRAVITY * delta
-	var space := InputManager.is_action_pressed("jump") or InputManager.get_touch_move_vector().y <= -0.25
+	var space := InputManager.is_action_pressed("jump")
 	if space and not previous_space and is_on_floor():
 		velocity.y = JUMP_SPEED
 		Sfx.play_at(&"jump", global_position, -15.0, 1.0, 0.08)
