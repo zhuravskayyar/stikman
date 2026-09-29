@@ -1,12 +1,15 @@
 extends Control
 
 const DEADZONE := 0.12
+const JET_ACTIVATE := 0.42
+const JET_RELEASE := 0.28
 const PAPER_ATLAS: Texture2D = preload("res://assets/hud_tape_atlas.png")
 const PAPER_REGION := Rect2(580, 467, 385, 359)
 
 var _pointer_id := -1
 var _origin := Vector2.ZERO
 var _knob_offset := Vector2.ZERO
+var _jet_active := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -22,6 +25,7 @@ func handle_touch_pressed(pointer_id: int, local_position: Vector2, _screen_posi
 	_pointer_id = pointer_id
 	_origin = local_position
 	_knob_offset = Vector2.ZERO
+	_jet_active = false
 	InputManager.set_touch_move_vector(pointer_id, Vector2.ZERO)
 	InputManager.claim_touch_device()
 	queue_redraw()
@@ -39,19 +43,33 @@ func _on_pointer_moved(pointer_id: int, screen_position: Vector2) -> void:
 		return
 	var local_position := get_global_transform_with_canvas().affine_inverse() * screen_position
 	var radius := minf(size.x, size.y) * 0.38
-	var x_offset := clampf(local_position.x - _origin.x, -radius, radius)
-	var amount := minf(absf(x_offset) / maxf(radius, 1.0), 1.0)
-	_knob_offset = Vector2(x_offset, 0.0)
-	var output := Vector2.ZERO
-	if amount > DEADZONE:
-		var strength := (amount - DEADZONE) / (1.0 - DEADZONE)
-		output = Vector2(signf(x_offset) * strength, 0.0)
-	InputManager.set_touch_move_vector(pointer_id, output)
+	var raw_offset := local_position - _origin
+	_knob_offset = raw_offset.limit_length(radius)
+
+	var x_ratio := clampf(raw_offset.x / maxf(radius, 1.0), -1.0, 1.0)
+	var x_amount := absf(x_ratio)
+	var output_x := 0.0
+	if x_amount > DEADZONE:
+		var strength := (x_amount - DEADZONE) / (1.0 - DEADZONE)
+		output_x = signf(x_ratio) * strength
+	InputManager.set_touch_move_vector(pointer_id, Vector2(output_x, 0.0))
+
+	var y_ratio := clampf(raw_offset.y / maxf(radius, 1.0), -1.0, 1.0)
+	var jet_source := "touch:%d:move-jet" % pointer_id
+	if not _jet_active and y_ratio <= -JET_ACTIVATE:
+		InputManager.press_action("jump", jet_source)
+		_jet_active = true
+	elif _jet_active and y_ratio >= -JET_RELEASE:
+		InputManager.release_action("jump", jet_source)
+		_jet_active = false
 	queue_redraw()
 
 func _on_pointer_ended(pointer_id: int) -> void:
 	if pointer_id != _pointer_id:
 		return
+	if _jet_active:
+		InputManager.release_action("jump", "touch:%d:move-jet" % pointer_id)
+		_jet_active = false
 	InputManager.clear_touch_move_vector(pointer_id)
 	_pointer_id = -1
 	_knob_offset = Vector2.ZERO
