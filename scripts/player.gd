@@ -74,7 +74,7 @@ var weapon_pivot: Node2D
 var gun: Sprite2D
 var arms: Sprite2D
 var pack: Sprite2D
-var player_name := "PLAYER"
+var player_name := ""
 var name_plate: GlyphText
 var network_peer_id := 1
 var is_network_replica := false
@@ -82,9 +82,9 @@ var network_target_position := Vector2.ZERO
 
 func _ready() -> void:
 	add_to_group("players")
-	var profile := get_node_or_null("/root/Profile")
-	if profile != null:
-		player_name = str(profile.player_name)
+	if player_name.is_empty():
+		var profile := get_node_or_null("/root/Profile")
+		player_name = str(profile.player_name) if profile != null else "PLAYER"
 	spawn_position = global_position
 	var shape := CapsuleShape2D.new()
 	shape.radius = LevelDesign.PLAYER_WIDTH * 0.5
@@ -529,20 +529,21 @@ func respawn() -> void:
 func _emit_stats() -> void:
 	stats_changed.emit(health, fuel, ammo[weapon_index], WEAPONS[weapon_index]["capacity"], WEAPONS[weapon_index]["name"], weapon_index, grenades)
 
-func apply_network_state(state: Dictionary, authoritative_health := true) -> void:
-	var next_position: Vector2 = state.get("position", global_position)
-	if is_network_replica:
-		if network_target_position == Vector2.ZERO:
+func apply_network_state(state: Dictionary, authoritative_health := true, sync_transform := true) -> void:
+	if sync_transform:
+		var next_position: Vector2 = state.get("position", global_position)
+		if is_network_replica:
+			if network_target_position == Vector2.ZERO:
+				global_position = next_position
+			network_target_position = next_position
+		else:
 			global_position = next_position
-		network_target_position = next_position
-	else:
-		global_position = next_position
-	velocity = state.get("velocity", Vector2.ZERO)
-	aiming = state.get("aiming", aiming).normalized()
-	if aiming.is_zero_approx():
-		aiming = Vector2.RIGHT
-	facing_left = bool(state.get("facing_left", aiming.x < 0.0))
-	thrusting = bool(state.get("thrusting", false))
+		velocity = state.get("velocity", Vector2.ZERO)
+		aiming = state.get("aiming", aiming).normalized()
+		if aiming.is_zero_approx():
+			aiming = Vector2.RIGHT
+		facing_left = bool(state.get("facing_left", aiming.x < 0.0))
+		thrusting = bool(state.get("thrusting", false))
 	if authoritative_health:
 		health = int(state.get("health", health))
 		dead_timer = float(state.get("dead_timer", dead_timer))

@@ -1,6 +1,6 @@
 extends Control
 
-const DEADZONE := 0.16
+const DEADZONE := 0.12
 const PAPER_ATLAS: Texture2D = preload("res://assets/hud_tape_atlas.png")
 const PAPER_REGION := Rect2(580, 467, 385, 359)
 

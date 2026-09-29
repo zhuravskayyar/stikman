@@ -511,14 +511,15 @@ func _on_network_states_received(states: Array) -> void:
 		if peer_id <= 0:
 			continue
 		var actor: CharacterBody2D
-		if peer_id == Wlan.local_peer_id():
+		var is_local_player := peer_id == Wlan.local_peer_id()
+		if is_local_player:
 			actor = player
 		elif network_players.has(peer_id):
 			actor = network_players[peer_id] as CharacterBody2D
 		else:
 			_spawn_network_player(peer_id, str(Wlan.peer_names.get(peer_id, "PLAYER")))
 			actor = network_players[peer_id] as CharacterBody2D
-		actor.apply_network_state(entry.get("state", {}), true)
+		actor.apply_network_state(entry.get("state", {}), true, not is_local_player)
 	_update_network_status()
 
 func _on_network_action_received(peer_id: int, action: String, payload: Dictionary) -> void:

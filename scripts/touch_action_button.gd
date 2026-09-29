@@ -82,7 +82,7 @@ func handle_touch_moved(pointer_id: int, local_position: Vector2, _screen_positi
 	var radius := _direction_radius()
 	var amount := minf(offset.length() / radius, 1.0)
 	_direction_offset = offset.limit_length(radius)
-	_direction_vector = offset.normalized() if amount > 0.18 else Vector2.ZERO
+	_direction_vector = offset.normalized() if amount > 0.12 else Vector2.ZERO
 	if _direction_vector.length_squared() > 0.0:
 		_direction_dragged = true
 		InputManager.set_touch_aim_vector(pointer_id, _direction_vector)

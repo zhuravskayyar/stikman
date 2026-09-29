@@ -28,6 +28,17 @@ var orientation_hint: CanvasLayer
 var wlan_panel: Control
 var wlan_address: LineEdit
 var wlan_message: GlyphText
+var wlan_heading: Control
+var wlan_instructions: Control
+var wlan_rooms_heading: Control
+var wlan_rooms_scroll: ScrollContainer
+var wlan_rooms_list: VBoxContainer
+var wlan_browser_join_button: Button
+var wlan_host_button: Button
+var wlan_search_button: Button
+var wlan_manual_button: Button
+var wlan_manual_join_button: Button
+var wlan_manual_open := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
@@ -53,6 +64,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_layout_screen)
 	Wlan.connection_established.connect(_on_wlan_connected)
 	Wlan.connection_failed.connect(_on_wlan_failed)
+	Wlan.rooms_changed.connect(_on_wlan_rooms_changed)
 	UpdateManager.status_changed.connect(_on_update_status_changed)
 	_show_home()
 	UpdateManager.check_for_updates()
@@ -64,6 +76,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _show_home() -> void:
+	Wlan.cancel_room_search()
 	Profile.apply_settings()
 	_clear_screen()
 	current_screen = "home"
@@ -167,51 +180,163 @@ func _show_settings() -> void:
 func _show_wlan_notice() -> void:
 	_clear_screen()
 	current_screen = "wlan"
-	wlan_panel = _make_panel(Vector2(560.0, 375.0))
+	wlan_manual_open = false
+	wlan_panel = _make_panel(Vector2(580.0, 394.0))
 	screen_layer.add_child(wlan_panel)
-	var heading := _make_label("CO-OP WLAN", 36.0, Color("a83a2d"), GlyphText.Align.CENTER)
-	heading.position = Vector2(22.0, 20.0)
-	heading.size = Vector2(516.0, 52.0)
-	wlan_panel.add_child(heading)
-	var instructions := _make_label("ОБИДВА ПРИСТРОЇ МАЮТЬ БУТИ В ОДНІЙ WI-FI МЕРЕЖІ", 16.0, Color("29231d"), GlyphText.Align.CENTER)
-	instructions.position = Vector2(28.0, 79.0)
-	instructions.size = Vector2(504.0, 54.0)
-	wlan_panel.add_child(instructions)
+	wlan_heading = _make_label("CO-OP WLAN", 36.0, Color("a83a2d"), GlyphText.Align.CENTER)
+	wlan_heading.position = Vector2(24.0, 18.0)
+	wlan_heading.size = Vector2(532.0, 44.0)
+	wlan_panel.add_child(wlan_heading)
+	var instructions_text := "ВІДКРИЙТЕ СПИСОК КІМНАТ АБО СТВОРІТЬ СВОЮ. ОБИДВА ПРИСТРОЇ МАЮТЬ БУТИ В ОДНІЙ WI-FI МЕРЕЖІ."
 	if OS.has_feature("web"):
-		var browser_note := _make_label("У БРАУЗЕРІ МОЖНА ПІДКЛЮЧИТИСЯ ДО ХОСТА ЗА IP", 14.0, Color("a83a2d"), GlyphText.Align.CENTER)
-		browser_note.position = Vector2(26.0, 125.0)
-		browser_note.size = Vector2(508.0, 30.0)
-		wlan_panel.add_child(browser_note)
-	var address_label := _make_label("IP ХОСТА", 16.0, Color("29231d"), GlyphText.Align.LEFT)
-	address_label.position = Vector2(30.0, 166.0)
-	address_label.size = Vector2(170.0, 27.0)
-	wlan_panel.add_child(address_label)
+		instructions_text = "БРАУЗЕР ПІДКЛЮЧИТЬСЯ ДО ХОСТА, ЯКЩО ГРУ ВІДКРИТО З ЙОГО ЛОКАЛЬНОГО ПОСИЛАННЯ."
+	wlan_instructions = _make_label(instructions_text, 14.0, Color("29231d"), GlyphText.Align.CENTER)
+	wlan_instructions.position = Vector2(28.0, 68.0)
+	wlan_instructions.size = Vector2(524.0, 40.0)
+	wlan_panel.add_child(wlan_instructions)
+	if OS.has_feature("web"):
+		wlan_browser_join_button = _make_button("ПРИЄДНАТИСЯ ДО ЦЬОГО ХОСТА", Color("a83a2d"), Color("f3e8cf"), Callable(self, "_join_browser_host"))
+		wlan_browser_join_button.position = Vector2(28.0, 118.0)
+		wlan_browser_join_button.size = Vector2(524.0, 50.0)
+		wlan_browser_join_button.disabled = _default_wlan_address().is_empty()
+		wlan_panel.add_child(wlan_browser_join_button)
+	else:
+		wlan_host_button = _make_button("СТВОРИТИ ХОСТ", Color("a83a2d"), Color("f3e8cf"), Callable(self, "_start_wlan_host"))
+		wlan_host_button.position = Vector2(28.0, 116.0)
+		wlan_host_button.size = Vector2(250.0, 48.0)
+		wlan_panel.add_child(wlan_host_button)
+		wlan_search_button = _make_button("ЗНАЙТИ КІМНАТИ", Color("29231d"), Color("f3e8cf"), Callable(self, "_search_wlan_rooms"))
+		wlan_search_button.position = Vector2(302.0, 116.0)
+		wlan_search_button.size = Vector2(250.0, 48.0)
+		wlan_panel.add_child(wlan_search_button)
+		wlan_rooms_heading = _make_label("ІГРИ У ЦІЙ МЕРЕЖІ", 15.0, Color("29231d"), GlyphText.Align.LEFT)
+		wlan_rooms_heading.position = Vector2(30.0, 171.0)
+		wlan_rooms_heading.size = Vector2(500.0, 23.0)
+		wlan_panel.add_child(wlan_rooms_heading)
+		wlan_rooms_scroll = ScrollContainer.new()
+		wlan_rooms_scroll.position = Vector2(28.0, 196.0)
+		wlan_rooms_scroll.size = Vector2(524.0, 106.0)
+		wlan_rooms_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		wlan_panel.add_child(wlan_rooms_scroll)
+		wlan_rooms_list = VBoxContainer.new()
+		wlan_rooms_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		wlan_rooms_list.add_theme_constant_override("separation", 5)
+		wlan_rooms_scroll.add_child(wlan_rooms_list)
 	wlan_address = LineEdit.new()
 	wlan_address.text = _default_wlan_address()
 	wlan_address.placeholder_text = "192.168.1.20:8910"
-	wlan_address.position = Vector2(28.0, 195.0)
-	wlan_address.size = Vector2(504.0, 48.0)
+	wlan_address.position = Vector2(28.0, 389.0)
+	wlan_address.size = Vector2(524.0, 44.0)
 	wlan_address.add_theme_font_size_override("font_size", 20)
 	wlan_address.add_theme_color_override("font_color", Color("29231d"))
 	wlan_address.add_theme_stylebox_override("normal", _line_style(Color("f5ecd9")))
 	wlan_address.add_theme_stylebox_override("focus", _line_style(Color("fff8e9")))
+	wlan_address.visible = false
 	wlan_panel.add_child(wlan_address)
-	var host := _make_button("СТВОРИТИ ХОСТ", Color("a83a2d"), Color("f3e8cf"), Callable(self, "_start_wlan_host"))
-	host.position = Vector2(28.0, 264.0)
-	host.size = Vector2(240.0, 50.0)
-	host.disabled = OS.has_feature("web")
-	wlan_panel.add_child(host)
-	var join := _make_button("ПІДКЛЮЧИТИСЯ", Color("29231d"), Color("f3e8cf"), Callable(self, "_join_wlan"))
-	join.position = Vector2(292.0, 264.0)
-	join.size = Vector2(240.0, 50.0)
-	wlan_panel.add_child(join)
-	wlan_message = _make_label("ХОСТ ЗАПУСКАЮТЬ У ЗАСТОСУНКУ; БРАУЗЕР ПІДКЛЮЧАЄТЬСЯ", 13.0, Color("57483a"), GlyphText.Align.CENTER)
-	wlan_message.position = Vector2(28.0, 321.0)
-	wlan_message.size = Vector2(504.0, 26.0)
+	wlan_manual_join_button = _make_button("ПІДКЛЮЧИТИСЯ ЗА АДРЕСОЮ", Color("29231d"), Color("f3e8cf"), Callable(self, "_join_wlan"))
+	wlan_manual_join_button.position = Vector2(28.0, 442.0)
+	wlan_manual_join_button.size = Vector2(524.0, 44.0)
+	wlan_manual_join_button.visible = false
+	wlan_panel.add_child(wlan_manual_join_button)
+	var initial_message := "ШУКАЮ КІМНАТИ…"
+	if OS.has_feature("web"):
+		initial_message = "ВІДКРИЙТЕ ГРУ ЧЕРЕЗ ЛОКАЛЬНЕ ПОСИЛАННЯ ХОСТА АБО ВКАЖІТЬ ЙОГО АДРЕСУ."
+	wlan_message = _make_label(initial_message, 13.0, Color("57483a"), GlyphText.Align.CENTER)
+	wlan_message.position = Vector2(28.0, 305.0)
+	wlan_message.size = Vector2(524.0, 34.0)
 	wlan_panel.add_child(wlan_message)
-	_layout_screen()
-	wlan_address.grab_focus()
-	wlan_address.caret_column = wlan_address.text.length()
+	wlan_manual_button = _make_button("ВВЕСТИ АДРЕС ВРУЧНУ", Color("d9ccb0"), Color("29231d"), Callable(self, "_toggle_manual_wlan"))
+	wlan_manual_button.position = Vector2(28.0, 344.0)
+	wlan_manual_button.size = Vector2(524.0, 40.0)
+	wlan_panel.add_child(wlan_manual_button)
+	_layout_wlan_panel()
+	if not OS.has_feature("web"):
+		_search_wlan_rooms()
+
+func _layout_wlan_panel() -> void:
+	if not is_instance_valid(wlan_panel):
+		return
+	var viewport_size := get_viewport().get_visible_rect().size
+	var is_web := OS.has_feature("web")
+	var panel_width := minf(580.0, viewport_size.x - 28.0)
+	var expanded_height := 386.0 if is_web else 488.0
+	var panel_height := expanded_height if wlan_manual_open else (286.0 if is_web else 394.0)
+	panel_height = minf(panel_height, viewport_size.y - 24.0)
+	wlan_panel.size = Vector2(panel_width, panel_height)
+	wlan_panel.position = (viewport_size - wlan_panel.size) * 0.5
+	var inner_width := panel_width - 56.0
+	wlan_heading.position.x = (panel_width - wlan_heading.size.x) * 0.5
+	wlan_instructions.size.x = inner_width
+	if is_web:
+		wlan_browser_join_button.position = Vector2(28.0, 118.0)
+		wlan_browser_join_button.size = Vector2(inner_width, 50.0)
+		wlan_message.position = Vector2(28.0, 176.0)
+		wlan_message.size = Vector2(inner_width, 46.0)
+		wlan_manual_button.position = Vector2(28.0, 232.0)
+		wlan_manual_button.size = Vector2(inner_width, 40.0)
+	else:
+		var button_width := (inner_width - 12.0) * 0.5
+		wlan_host_button.position = Vector2(28.0, 116.0)
+		wlan_host_button.size = Vector2(button_width, 48.0)
+		wlan_search_button.position = Vector2(40.0 + button_width, 116.0)
+		wlan_search_button.size = Vector2(button_width, 48.0)
+		wlan_rooms_heading.position = Vector2(30.0, 171.0)
+		wlan_rooms_heading.size.x = inner_width - 4.0
+		wlan_rooms_scroll.position = Vector2(28.0, 196.0)
+		wlan_rooms_scroll.size = Vector2(inner_width, 106.0)
+		wlan_message.position = Vector2(28.0, 305.0)
+		wlan_message.size = Vector2(inner_width, 34.0)
+		wlan_manual_button.position = Vector2(28.0, 344.0)
+		wlan_manual_button.size = Vector2(inner_width, 40.0)
+	wlan_address.position = Vector2(28.0, 389.0 if not is_web else 278.0)
+	wlan_address.size = Vector2(inner_width, 44.0)
+	wlan_manual_join_button.position = Vector2(28.0, 442.0 if not is_web else 330.0)
+	wlan_manual_join_button.size = Vector2(inner_width, 44.0)
+
+func _toggle_manual_wlan() -> void:
+	wlan_manual_open = not wlan_manual_open
+	wlan_address.visible = wlan_manual_open
+	wlan_manual_join_button.visible = wlan_manual_open
+	_layout_wlan_panel()
+	if wlan_manual_open:
+		wlan_address.grab_focus()
+		wlan_address.caret_column = wlan_address.text.length()
+
+func _search_wlan_rooms() -> void:
+	if not is_instance_valid(wlan_message):
+		return
+	wlan_message.text = "ШУКАЮ КІМНАТИ В МЕРЕЖІ…"
+	if Wlan.search_rooms() != OK:
+		wlan_message.text = Wlan.status_message
+
+func _on_wlan_rooms_changed(rooms: Array, scan_finished: bool) -> void:
+	if current_screen != "wlan" or not is_instance_valid(wlan_rooms_list):
+		return
+	for child in wlan_rooms_list.get_children():
+		wlan_rooms_list.remove_child(child)
+		child.queue_free()
+	for room in rooms:
+		if not room is Dictionary:
+			continue
+		var room_name := str(room.get("host_name", "HOST"))
+		var player_count := int(room.get("players", 1))
+		var player_limit := int(room.get("player_limit", Wlan.MAX_PLAYERS))
+		var address := str(room.get("address", ""))
+		var join := _make_button("", Color("eadfc6"), Color("29231d"), Callable(self, "_join_discovered_room").bind(address))
+		join.custom_minimum_size = Vector2(0.0, 44.0)
+		join.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var label := _make_label("%s   •   %d/%d гравців" % [room_name, player_count, player_limit], 16.0, Color("29231d"), GlyphText.Align.CENTER)
+		label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		join.add_child(label)
+		wlan_rooms_list.add_child(join)
+	if scan_finished:
+		if rooms.is_empty():
+			wlan_message.text = "КІМНАТ НЕ ЗНАЙДЕНО. ПЕРЕВІРТЕ WI-FI АБО ВВЕДІТЬ АДРЕСУ ВРУЧНУ."
+		else:
+			wlan_message.text = "ЗНАЙДЕНО КІМНАТ: %d. НАТИСНІТЬ, ЩОБ УВІЙТИ." % rooms.size()
+
+func _join_discovered_room(address: String) -> void:
+	_join_wlan_at(address)
 
 func _show_online_notice() -> void:
 	_show_mode_notice("ONLINE")
@@ -364,7 +489,7 @@ func _layout_screen() -> void:
 	elif current_screen == "notice" and is_instance_valid(notice_panel):
 		notice_panel.position = (viewport_size - notice_panel.size) * 0.5
 	elif current_screen == "wlan" and is_instance_valid(wlan_panel):
-		wlan_panel.position = (viewport_size - wlan_panel.size) * 0.5
+		_layout_wlan_panel()
 
 func _clear_screen() -> void:
 	if is_instance_valid(screen_layer):
@@ -389,6 +514,16 @@ func _clear_screen() -> void:
 	wlan_panel = null
 	wlan_address = null
 	wlan_message = null
+	wlan_heading = null
+	wlan_instructions = null
+	wlan_rooms_heading = null
+	wlan_rooms_scroll = null
+	wlan_rooms_list = null
+	wlan_browser_join_button = null
+	wlan_host_button = null
+	wlan_search_button = null
+	wlan_manual_button = null
+	wlan_manual_join_button = null
 
 func _on_volume_preview(value: float) -> void:
 	AudioServer.set_bus_volume_linear(0, value)
@@ -422,8 +557,18 @@ func _start_wlan_host() -> void:
 	get_tree().change_scene_to_file("res://scenes/main.tscn")
 
 func _join_wlan() -> void:
+	_join_wlan_at(wlan_address.text)
+
+func _join_browser_host() -> void:
+	_join_wlan_at(_default_wlan_address())
+
+func _join_wlan_at(address: String) -> void:
+	var clean_address := address.strip_edges()
+	if clean_address.is_empty():
+		_set_wlan_message("ВКАЖІТЬ АДРЕСУ ХОСТА АБО ВІДКРИЙТЕ ЙОГО ПОСИЛАННЯ.")
+		return
 	Wlan.local_player_name = Profile.player_name
-	var result: Error = Wlan.connect_to(wlan_address.text)
+	var result: Error = Wlan.connect_to(clean_address)
 	if result != OK:
 		_set_wlan_message(Wlan.status_message)
 		return
