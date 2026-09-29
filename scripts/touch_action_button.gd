@@ -17,6 +17,7 @@ var _direction_press_position := Vector2.ZERO
 var _direction_offset := Vector2.ZERO
 var _direction_vector := Vector2.ZERO
 var _direction_dragged := false
+var _fire_active := false
 
 func configure(action: String, icon: Texture2D, frame: Rect2, button_mark := "", held := false, directional := false) -> void:
 	action_name = action
@@ -80,15 +81,27 @@ func handle_touch_moved(pointer_id: int, local_position: Vector2, _screen_positi
 		return
 	var offset := local_position - _direction_press_position
 	var radius := _direction_radius()
-	var amount := minf(offset.length() / radius, 1.0)
 	_direction_offset = offset.limit_length(radius)
-	_direction_vector = offset.normalized() if amount > 0.12 else Vector2.ZERO
-	if _direction_vector.length_squared() > 0.0:
+
+	var viewport_size := get_viewport_rect().size
+	var units_per_css_pixel := InputManager.get_viewport_units_per_css_pixel(viewport_size)
+	var activation_distance := maxf(12.0 * units_per_css_pixel, radius * 0.22)
+	var release_distance := activation_distance * 0.72
+	var drag_distance := offset.length()
+
+	if drag_distance >= activation_distance:
+		_direction_vector = offset.normalized()
 		_direction_dragged = true
 		InputManager.set_touch_aim_vector(pointer_id, _direction_vector)
-		InputManager.press_action("primary_action", "touch:%d:aim-fire" % pointer_id)
-	else:
+		if not _fire_active:
+			InputManager.press_action("primary_action", "touch:%d:aim-fire" % pointer_id)
+			_fire_active = true
+	elif drag_distance <= release_distance:
+		_direction_vector = Vector2.ZERO
 		InputManager.clear_touch_aim_vector(pointer_id)
+		if _fire_active:
+			InputManager.release_action("primary_action", "touch:%d:aim-fire" % pointer_id)
+			_fire_active = false
 	queue_redraw()
 
 func _on_pointer_released(pointer_id: int) -> void:
@@ -142,6 +155,9 @@ func _on_pointer_ended(pointer_id: int) -> void:
 	if _pointer_ids.erase(pointer_id):
 		queue_redraw()
 	if pointer_id == _direction_pointer_id:
+		if _fire_active:
+			InputManager.release_action("primary_action", "touch:%d:aim-fire" % pointer_id)
+			_fire_active = false
 		_direction_pointer_id = -1
 		_direction_press_position = Vector2.ZERO
 		_direction_offset = Vector2.ZERO

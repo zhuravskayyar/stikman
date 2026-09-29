@@ -2,7 +2,6 @@ extends Control
 
 const TouchButton = preload("res://scripts/touch_action_button.gd")
 const VirtualJoystickScript = preload("res://scripts/virtual_joystick.gd")
-const TouchAimAreaScript = preload("res://scripts/touch_aim_area.gd")
 const GRENADE_ICON: Texture2D = preload("res://assets/hud_icon_grenade.png")
 const JET_ICON: Texture2D = preload("res://assets/hud_icon_jet.png")
 const PUNCH_ICON: Texture2D = preload("res://assets/hud_icon_punch.png")
@@ -14,7 +13,6 @@ const LEFT_JOYSTICK_SCALE := 1.25
 const RIGHT_JOYSTICK_SCALE := 1.5
 
 var joystick: Control
-var aim_area: Control
 var action_buttons: Dictionary = {}
 
 func _ready() -> void:
@@ -22,8 +20,6 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	joystick = VirtualJoystickScript.new()
 	add_child(joystick)
-	aim_area = TouchAimAreaScript.new()
-	add_child(aim_area)
 	_add_button("grenade", "skill_4", GRENADE_ICON, GRENADE_REGION)
 	_add_button("jetpack", "jump", JET_ICON, JET_REGION, "", true)
 	_add_button("punch", "skill_1", PUNCH_ICON, PUNCH_REGION, "", false, true)
@@ -85,9 +81,6 @@ func _layout() -> void:
 	var joystick_side := clampf(minf(css_size.y * 0.30, css_size.x * 0.22), 100.0, 148.0) * LEFT_JOYSTICK_SCALE * units_per_css_pixel
 	joystick.size = Vector2.ONE * joystick_side
 	joystick.position = Vector2(left_pad, viewport_size.y - bottom_pad - joystick_side)
-	var aim_left := viewport_size.x * 0.37
-	aim_area.position = Vector2(aim_left, 0.0)
-	aim_area.size = Vector2(viewport_size.x - aim_left, viewport_size.y)
 	_update_visibility()
 
 func _place(key: String, center: Vector2, button_side: float) -> void:
