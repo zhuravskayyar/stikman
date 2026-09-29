@@ -3,14 +3,10 @@ extends Control
 const TouchButton = preload("res://scripts/touch_action_button.gd")
 const VirtualJoystickScript = preload("res://scripts/virtual_joystick.gd")
 const GRENADE_ICON: Texture2D = preload("res://assets/hud_icon_grenade.png")
-const JET_ICON: Texture2D = preload("res://assets/hud_icon_jet.png")
 const PUNCH_ICON: Texture2D = preload("res://assets/hud_icon_punch.png")
 
 const GRENADE_REGION := Rect2(580, 467, 385, 359)
-const JET_REGION := Rect2(994, 462, 406, 376)
 const PUNCH_REGION := Rect2(1396, 468, 360, 366)
-const LEFT_JOYSTICK_SCALE := 1.25
-const RIGHT_JOYSTICK_SCALE := 1.5
 
 var joystick: Control
 var action_buttons: Dictionary = {}
@@ -21,7 +17,6 @@ func _ready() -> void:
 	joystick = VirtualJoystickScript.new()
 	add_child(joystick)
 	_add_button("grenade", "skill_4", GRENADE_ICON, GRENADE_REGION)
-	_add_button("jetpack", "jump", JET_ICON, JET_REGION, "", true)
 	_add_button("punch", "skill_1", PUNCH_ICON, PUNCH_REGION, "", false, true)
 	_add_button("interact", "interact", null, GRENADE_REGION, "interact")
 	_add_button("pause", "pause", null, PUNCH_REGION, "pause")
@@ -61,24 +56,27 @@ func _layout() -> void:
 	var safe := InputManager.get_safe_area_insets(viewport_size)
 	var css_size := InputManager.get_css_viewport_size(viewport_size)
 	var units_per_css_pixel := InputManager.get_viewport_units_per_css_pixel(viewport_size)
-	var side_css := clampf(minf(css_size.y * 0.17, css_size.x * 0.10), 48.0, 68.0)
+	var side_css := clampf(minf(css_size.y * 0.18, css_size.x * 0.09), 58.0, 72.0)
 	var side := side_css * units_per_css_pixel
-	var gap := maxf(8.0 * units_per_css_pixel, side * 0.16)
+	var gap := maxf(10.0 * units_per_css_pixel, side * 0.16)
 	var left_pad := maxf(14.0 * units_per_css_pixel, safe.x + 10.0 * units_per_css_pixel)
 	var right_pad := maxf(14.0 * units_per_css_pixel, safe.z + 10.0 * units_per_css_pixel)
 	var top_pad := maxf(12.0 * units_per_css_pixel, safe.y + 8.0 * units_per_css_pixel)
 	var bottom_pad := maxf(14.0 * units_per_css_pixel, safe.w + 10.0 * units_per_css_pixel)
-	var main_side := side * 1.32 * RIGHT_JOYSTICK_SCALE
+
+	var right_stick_css := clampf(minf(css_size.y * 0.43, css_size.x * 0.20), 150.0, 185.0)
+	var main_side := right_stick_css * units_per_css_pixel
 	var main_center := Vector2(viewport_size.x - right_pad - main_side * 0.5, viewport_size.y - bottom_pad - main_side * 0.5)
-	var jet_center := main_center - Vector2(main_side * 0.5 + gap + side * 0.5, 0.0)
-	var grenade_center := jet_center - Vector2(side + gap, 0.0)
+	var grenade_center := main_center - Vector2(main_side * 0.5 + gap + side * 0.5, 0.0)
 	_place("punch", main_center, main_side)
-	_place("jetpack", jet_center, side)
 	_place("grenade", grenade_center, side)
 	_place("interact", grenade_center - Vector2(0.0, side + gap), side)
-	var pause_side := maxf(48.0 * units_per_css_pixel, side * 0.82)
-	_place("pause", Vector2(left_pad + 224.0 * units_per_css_pixel, top_pad + pause_side * 0.5), pause_side)
-	var joystick_side := clampf(minf(css_size.y * 0.30, css_size.x * 0.22), 100.0, 148.0) * LEFT_JOYSTICK_SCALE * units_per_css_pixel
+
+	var pause_side := maxf(48.0 * units_per_css_pixel, side * 0.78)
+	_place("pause", Vector2(viewport_size.x - right_pad - pause_side * 0.5, top_pad + pause_side * 0.5), pause_side)
+
+	var left_stick_css := clampf(minf(css_size.y * 0.46, css_size.x * 0.23), 160.0, 200.0)
+	var joystick_side := left_stick_css * units_per_css_pixel
 	joystick.size = Vector2.ONE * joystick_side
 	joystick.position = Vector2(left_pad, viewport_size.y - bottom_pad - joystick_side)
 	_update_visibility()
