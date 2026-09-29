@@ -36,6 +36,7 @@ var orientation_hint: CanvasLayer
 var room_info_panel: Control
 var networked := false
 var network_players: Dictionary = {}
+var network_bots: Dictionary = {}
 var network_send_timer := 0.0
 
 func _ready() -> void:
@@ -90,6 +91,8 @@ func _ready() -> void:
 		for peer_id in Wlan.peer_names:
 			if int(peer_id) != player.network_peer_id:
 				_spawn_network_player(int(peer_id), str(Wlan.peer_names[peer_id]))
+		if Wlan.is_host:
+			_sync_network_bots()
 		_update_network_status()
 	hud.zoom_cycle_requested.connect(func() -> void: InputManager.pulse_action("zoom_cycle", "ui:zoom-cycle"))
 	if not networked:
@@ -179,6 +182,101 @@ func _create_bot(at: Vector2, weapon_index: int = 2) -> void:
 	bot.fired.connect(_on_robot_fired.bind(bot))
 	bot.defeated.connect(_on_bot_defeated.bind(at, weapon_index))
 	gameplay_layer.add_child(bot)
+
+func _sync_network_bots() -> void:
+	if not networked or not Wlan.is_host:
+		return
+	var desired_ids: Array = network_players.keys()
+	desired_ids.sort()
+	for existing_id in network_bots.keys():
+		if not desired_ids.has(existing_id):
+			_remove_network_bot(int(existing_id), true)
+	for peer_id in desired_ids:
+		var bot_id := int(peer_id)
+		if not network_bots.has(bot_id):
+			_create_network_bot(bot_id)
+
+func _create_network_bot(peer_id: int, forced_spawn: Vector2 = Vector2.INF, forced_weapon: int = -1) -> void:
+	if not networked or not Wlan.is_host or network_bots.has(peer_id) or not network_players.has(peer_id):
+		return
+	var peer_ids: Array = network_players.keys()
+	peer_ids.sort()
+	var slot := maxi(0, peer_ids.find(peer_id))
+	var spawn_entries := LevelDesign.bot_spawns()
+	var spawn_positions: Array[Vector2] = []
+	var weapon_indices: Array[int] = []
+	for entry in spawn_entries:
+		spawn_positions.append(entry["position"])
+		weapon_indices.append(int(entry["weapon"]))
+	spawn_positions.append(LevelDesign.drone_spawn())
+	weapon_indices.append(4)
+	var spawn_position: Vector2 = forced_spawn if forced_spawn != Vector2.INF else spawn_positions[slot % spawn_positions.size()]
+	var weapon_index: int = forced_weapon if forced_weapon >= 0 else weapon_indices[slot % weapon_indices.size()]
+	var bot := Bot.new()
+	bot.network_bot_id = peer_id
+	bot.target = network_players[peer_id]
+	bot.position = spawn_position
+	bot.weapon_index = weapon_index
+	bot.fired.connect(_on_network_bot_fired.bind(bot, peer_id))
+	bot.defeated.connect(_on_network_bot_defeated.bind(peer_id, spawn_position, weapon_index))
+	gameplay_layer.add_child(bot)
+	network_bots[peer_id] = bot
+
+func _spawn_network_bot_replica(bot_id: int, state: Dictionary) -> void:
+	if Wlan.is_host or network_bots.has(bot_id):
+		return
+	var bot := Bot.new()
+	bot.is_network_replica = true
+	bot.network_bot_id = bot_id
+	bot.position = state.get("position", LevelDesign.drone_spawn())
+	bot.weapon_index = int(state.get("weapon_index", 2))
+	gameplay_layer.add_child(bot)
+	bot.apply_network_state(state)
+	network_bots[bot_id] = bot
+
+func _remove_network_bot(bot_id: int, relay := false) -> void:
+	if not network_bots.has(bot_id):
+		return
+	var bot: Node = network_bots[bot_id]
+	network_bots.erase(bot_id)
+	if is_instance_valid(bot):
+		bot.queue_free()
+	if relay and Wlan.is_host:
+		Wlan.relay_action(1, "bot_remove", {"bot_id": bot_id})
+
+func _bot_network_state(bot: CharacterBody2D) -> Dictionary:
+	return {
+		"position": bot.global_position,
+		"velocity": bot.velocity,
+		"weapon_index": int(bot.weapon_index),
+		"health": int(bot.health),
+		"dead_timer": float(bot.dead_timer),
+		"flip_h": bool(bot.body.flip_h) if is_instance_valid(bot.body) else false,
+		"animation": str(bot.body.animation) if is_instance_valid(bot.body) else "hover"
+	}
+
+func _on_network_bot_fired(origin: Vector2, direction: Vector2, weapon_index: int, bot: CharacterBody2D, bot_id: int) -> void:
+	if not Wlan.is_host or not is_instance_valid(bot):
+		return
+	_fire_weapon(origin, direction, weapon_index, bot, true)
+	Wlan.relay_action(1, "bot_fire", {
+		"bot_id": bot_id,
+		"origin": origin,
+		"direction": direction,
+		"weapon": weapon_index
+	})
+
+func _on_network_bot_defeated(at: Vector2, bot_id: int, original_spawn: Vector2, weapon_index: int) -> void:
+	if not Wlan.is_host:
+		return
+	network_bots.erase(bot_id)
+	Sfx.play_at(&"enemy_death", at, -14.0, 0.9, 0.08)
+	_spawn_effect("explosion", at, 0.33, 0.4)
+	Wlan.relay_action(1, "bot_defeated", {"bot_id": bot_id, "position": at})
+	get_tree().create_timer(3.5).timeout.connect(func() -> void:
+		if is_inside_tree() and networked and Wlan.is_host and network_players.has(bot_id):
+			_create_network_bot(bot_id, original_spawn, weapon_index)
+	)
 
 func _create_drone(at: Vector2, aggro_radius: float = 480.0) -> void:
 	var drone := Drone.new()
@@ -442,6 +540,10 @@ func _process_network(delta: float) -> void:
 			var actor := network_players[peer_id] as CharacterBody2D
 			if is_instance_valid(actor):
 				states.append({"peer_id": int(peer_id), "state": _player_network_state(actor)})
+		for bot_id in network_bots:
+			var bot := network_bots[bot_id] as CharacterBody2D
+			if is_instance_valid(bot):
+				states.append({"bot_id": int(bot_id), "bot_state": _bot_network_state(bot)})
 		Wlan.publish_states(states)
 
 func _player_network_state(actor: CharacterBody2D) -> Dictionary:
@@ -482,6 +584,8 @@ func _on_network_peer_joined(peer_id: int, player_name: String) -> void:
 	if peer_id == Wlan.local_peer_id():
 		return
 	_spawn_network_player(peer_id, player_name)
+	if Wlan.is_host:
+		_sync_network_bots()
 	_update_network_status()
 
 func _on_network_peer_left(peer_id: int) -> void:
@@ -491,6 +595,8 @@ func _on_network_peer_left(peer_id: int) -> void:
 	network_players.erase(peer_id)
 	if is_instance_valid(remote_player):
 		remote_player.queue_free()
+	if Wlan.is_host:
+		_sync_network_bots()
 	_update_network_status()
 
 func _on_network_state_received(peer_id: int, state: Dictionary) -> void:
@@ -506,6 +612,18 @@ func _on_network_state_received(peer_id: int, state: Dictionary) -> void:
 func _on_network_states_received(states: Array) -> void:
 	for entry in states:
 		if not entry is Dictionary:
+			continue
+		if entry.has("bot_id"):
+			var bot_id := int(entry.get("bot_id", 0))
+			if bot_id <= 0:
+				continue
+			var bot_state: Dictionary = entry.get("bot_state", {})
+			if network_bots.has(bot_id) and not is_instance_valid(network_bots[bot_id]):
+				network_bots.erase(bot_id)
+			if not network_bots.has(bot_id):
+				_spawn_network_bot_replica(bot_id, bot_state)
+			elif is_instance_valid(network_bots[bot_id]):
+				network_bots[bot_id].apply_network_state(bot_state)
 			continue
 		var peer_id := int(entry.get("peer_id", 0))
 		if peer_id <= 0:
@@ -558,7 +676,31 @@ func _on_network_action_received(peer_id: int, action: String, payload: Dictiona
 				_apply_player_punch(actor, punch_origin, direction)
 				Wlan.relay_action(peer_id, action, payload)
 		return
-	if peer_id == Wlan.local_peer_id():
+	if peer_id == Wlan.local_peer_id() and action not in ["bot_fire", "bot_defeated", "bot_remove"]:
+		return
+	if action == "bot_fire":
+		var firing_bot_id := int(payload.get("bot_id", 0))
+		var firing_bot: CharacterBody2D = network_bots.get(firing_bot_id) as CharacterBody2D
+		if is_instance_valid(firing_bot):
+			var bot_origin: Vector2 = payload.get("origin", firing_bot.global_position)
+			var bot_direction: Vector2 = payload.get("direction", Vector2.RIGHT).normalized()
+			_spawn_visual_fire(firing_bot, bot_origin, bot_direction, int(payload.get("weapon", 2)))
+		return
+	if action == "bot_defeated":
+		var defeated_bot_id := int(payload.get("bot_id", 0))
+		var defeated_bot: CharacterBody2D = network_bots.get(defeated_bot_id) as CharacterBody2D
+		if is_instance_valid(defeated_bot):
+			defeated_bot.show_network_defeat()
+			get_tree().create_timer(1.0).timeout.connect(func() -> void:
+				if network_bots.get(defeated_bot_id) == defeated_bot:
+					network_bots.erase(defeated_bot_id)
+					if is_instance_valid(defeated_bot):
+						defeated_bot.queue_free()
+			)
+		_spawn_effect("explosion", payload.get("position", Vector2.ZERO), 0.33, 0.4)
+		return
+	if action == "bot_remove":
+		_remove_network_bot(int(payload.get("bot_id", 0)))
 		return
 	var remote_player: CharacterBody2D = network_players.get(peer_id) as CharacterBody2D
 	if action in ["fire", "grenade"]:
