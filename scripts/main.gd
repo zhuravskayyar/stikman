@@ -694,6 +694,8 @@ func _on_network_action_received(peer_id: int, action: String, payload: Dictiona
 			get_tree().create_timer(1.0).timeout.connect(func() -> void:
 				if network_bots.get(defeated_bot_id) == defeated_bot:
 					network_bots.erase(defeated_bot_id)
+					if is_instance_valid(defeated_bot):
+						defeated_bot.queue_free()
 			)
 		_spawn_effect("explosion", payload.get("position", Vector2.ZERO), 0.33, 0.4)
 		return
